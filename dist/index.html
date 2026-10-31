@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#06090d" />
+    <title>ROTOR//TITAN — Kaiju Air Superiority</title>
+    <meta
+      name="description"
+      content="Pilot the AH-79 ROTOR. Hunt colossal kaiju through a burning city. Upgrade your guns. Own the sky."
+    />
+    <script type="module" crossorigin src="./assets/index-Ccs8Og1U.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-BU_dJU2Q.css">
+  </head>
+  <body class="is-loading">
+    <div id="app">
+      <canvas id="game-canvas" aria-label="3D game viewport"></canvas>
+
+      <div class="screen-fx" aria-hidden="true">
+        <div class="vignette"></div>
+        <div class="scanlines"></div>
+        <div class="grain"></div>
+        <div id="damage-vignette"></div>
+      </div>
+
+      <!-- ══════════════ MAIN MENU ══════════════ -->
+      <section id="menu" class="screen menu-screen">
+        <header class="menu-header">
+          <div class="brand">
+            <span class="brand-mark"><i></i><i></i><i></i></span>
+            <span class="brand-type">AEROSPACE<br />DEFENSE<br />DIVISION</span>
+          </div>
+          <div class="menu-meta">
+            <span class="live-dot"></span>
+            <span>LIVE COMBAT FEED</span>
+            <span class="menu-meta-sep">/</span>
+            <span>SECTOR 07</span>
+            <span class="menu-meta-sep">/</span>
+            <span id="menu-clock">21:47:08</span>
+          </div>
+          <div class="menu-wing">AH-79 &nbsp;//&nbsp; ROTOR WING</div>
+        </header>
+
+        <div class="menu-layout">
+          <div class="menu-copy">
+            <div class="eyebrow"><span>OPERATION</span> IRON CROWN</div>
+            <h1 class="logo" aria-label="Rotor Titan">
+              <span class="logo-rotor">ROTOR</span>
+              <span class="logo-slash">//</span>
+              <span class="logo-titan" data-text="TITAN">TITAN</span>
+            </h1>
+            <p class="tagline">The city is the battlefield.<br /><b>You are the sky.</b></p>
+            <p class="deck">
+              Colossal kaiju are tearing Sector 07 apart from the streets up. Take the stick of the
+              AH-79, cut them down from above, and turn the city's skyline into your kill zone.
+            </p>
+
+            <div class="menu-actions">
+              <button id="start-btn" class="btn btn-primary" type="button">
+                <span class="btn-index">01</span>
+                <span class="btn-label">DEPLOY</span>
+                <span class="btn-arrow">↗</span>
+              </button>
+              <button id="briefing-btn" class="btn btn-ghost" type="button">
+                <span class="btn-label">FLIGHT BRIEF</span>
+              </button>
+            </div>
+
+            <div class="control-strip" aria-label="Controls">
+              <div><kbd>W</kbd><kbd>S</kbd><span>THRUST</span></div>
+              <div><kbd>A</kbd><kbd>D</kbd><span>STRAFE</span></div>
+              <div><kbd>R</kbd><kbd>F</kbd><span>ALTITUDE</span></div>
+              <div><kbd>SHIFT</kbd><span>BOOST</span></div>
+              <div><span class="mouse-icon"></span><span>AIM / FIRE</span></div>
+            </div>
+          </div>
+
+          <aside class="menu-side">
+            <div class="side-rule"></div>
+            <div class="threat-panel">
+              <div class="panel-kicker"><span class="blink-square"></span> PRIORITY THREAT</div>
+              <div class="threat-name">CLASS&nbsp;V<br /><b>BEHEMOTH</b></div>
+              <div class="threat-stats">
+                <div><span>HEIGHT</span><b>62 M</b></div>
+                <div><span>STATUS</span><b class="danger">RAMPAGING</b></div>
+                <div><span>EST. KILLS</span><b>14,208</b></div>
+              </div>
+              <div class="threat-bars">
+                <span style="--w: 92%"></span>
+                <span style="--w: 76%"></span>
+                <span style="--w: 88%"></span>
+                <span style="--w: 61%"></span>
+                <span style="--w: 83%"></span>
+                <span style="--w: 48%"></span>
+                <span style="--w: 70%"></span>
+                <span style="--w: 55%"></span>
+              </div>
+            </div>
+
+            <div class="mission-panel">
+              <div class="panel-kicker">MISSION PARAMETERS</div>
+              <div class="mission-row"><span>CITY</span><b>NEO-KOWLOON</b></div>
+              <div class="mission-row"><span>WEAPON</span><b>30MM VULCAN / HELLFIRE</b></div>
+              <div class="mission-row"><span>ASSET</span><b>AH-79 “ROTOR”</b></div>
+              <div class="mission-row"><span>SUPPORT</span><b class="ok">SKY CONTROL</b></div>
+            </div>
+
+            <div class="best-panel">
+              <span>PERSONAL BEST</span>
+              <b id="menu-best">0</b>
+              <small id="menu-best-wave">NO RECORD</small>
+            </div>
+          </aside>
+        </div>
+
+        <footer class="menu-footer">
+          <div class="footer-ticker">
+            <span class="ticker-label">BREAKING</span>
+            <div class="ticker-track">
+              <span>KAIJU BREACH CONFIRMED AT CENTRAL AVENUE</span>
+              <span>EVACUATION CORRIDORS 4–9 CLOSED</span>
+              <span>ALL ROTOR UNITS SCRAMBLE IMMEDIATELY</span>
+              <span>KAIJU BREACH CONFIRMED AT CENTRAL AVENUE</span>
+              <span>EVACUATION CORRIDORS 4–9 CLOSED</span>
+            </div>
+          </div>
+          <div class="footer-id">RT-79 / BUILD 06.14.31</div>
+        </footer>
+      </section>
+
+      <!-- ══════════════ FLIGHT BRIEF ══════════════ -->
+      <section id="briefing" class="screen modal-screen hidden" aria-hidden="true">
+        <div class="modal-backdrop"></div>
+        <div class="brief-card">
+          <button id="brief-close" class="modal-close" type="button" aria-label="Close">×</button>
+          <div class="panel-kicker">AH-79 // FLIGHT MANUAL</div>
+          <h2>STAY ABOVE.<br /><span>STRIKE HARD.</span></h2>
+          <div class="brief-grid">
+            <div class="brief-item">
+              <span class="brief-num">01</span>
+              <div><b>FLY</b><p><kbd>W</kbd><kbd>S</kbd> thrust · <kbd>A</kbd><kbd>D</kbd> strafe · <kbd>R</kbd><kbd>F</kbd> climb / descend · <kbd>SHIFT</kbd> boost.</p></div>
+            </div>
+            <div class="brief-item">
+              <span class="brief-num">02</span>
+              <div><b>AIM &amp; FIRE</b><p>Move the mouse to aim. Hold <kbd>LMB</kbd> for the Vulcan. <kbd>RMB</kbd> launches a missile at your locked target.</p></div>
+            </div>
+            <div class="brief-item">
+              <span class="brief-num">03</span>
+              <div><b>MANAGE HEAT</b><p>The 30mm cannon overheats. Short bursts keep lead on target. Missiles reload automatically.</p></div>
+            </div>
+            <div class="brief-item">
+              <span class="brief-num">04</span>
+              <div><b>UPGRADE</b><p>Survive a wave to requisition weapon and airframe upgrades from Sky Control.</p></div>
+            </div>
+            <div class="brief-item">
+              <span class="brief-num">05</span>
+              <div><b>PROTECT THE CITY</b><p>Kaiju smash buildings and drain city integrity. If it reaches zero, the sector is lost.</p></div>
+            </div>
+            <div class="brief-item">
+              <span class="brief-num">06</span>
+              <div><b>WATCH THE SKY</b><p>Flying kaiju harry you from above. Break their attack runs or bleed altitude fast.</p></div>
+            </div>
+          </div>
+          <div class="brief-note"><span>↑</span> TOUCH CONTROLS ACTIVATE AUTOMATICALLY ON MOBILE</div>
+        </div>
+      </section>
+
+      <!-- ══════════════ IN-GAME HUD ══════════════ -->
+      <section id="hud" class="screen hud hidden" aria-hidden="true">
+        <div class="hud-top">
+          <div class="hud-brand">
+            <span class="hud-brand-mark"></span>
+            <div>ROTOR<span>//</span>TITAN</div>
+            <small>AH-79 STRIKE WING</small>
+          </div>
+
+          <div class="city-status">
+            <div class="city-label"><span>CITY INTEGRITY</span><b id="city-pct">100%</b></div>
+            <div class="city-bar"><i id="city-bar-fill"></i><em></em><em></em><em></em><em></em><em></em></div>
+            <div class="city-sub"><span>SECTOR 07</span><span id="city-state">STABLE</span></div>
+          </div>
+
+          <div class="hud-score">
+            <div><span>SCORE</span><b id="score">000000</b></div>
+            <div class="hud-wave"><span>WAVE</span><b id="wave">01</b></div>
+            <button id="mute-btn" class="icon-btn" type="button" aria-label="Toggle sound">SOUND ON</button>
+          </div>
+        </div>
+
+        <div class="hud-objective">
+          <div class="objective-kicker"><span class="blink-square"></span> ACTIVE OBJECTIVE</div>
+          <div class="objective-main" id="objective-main">NEUTRALIZE ALL KAIJU</div>
+          <div class="objective-sub"><span id="hostiles">2 HOSTILES</span><span id="objective-time">00:00</span></div>
+        </div>
+
+        <div class="lockbox" id="lockbox" aria-hidden="true">
+          <span class="lock-corner tl"></span><span class="lock-corner tr"></span>
+          <span class="lock-corner bl"></span><span class="lock-corner br"></span>
+          <span class="lock-tag" id="lock-tag">LOCK</span>
+        </div>
+
+        <div class="target-panel" id="target-panel">
+          <div class="target-head">
+            <span id="target-class">CLASS V</span>
+            <span id="target-range">--- M</span>
+          </div>
+          <div class="target-name" id="target-name">BEHEMOTH</div>
+          <div class="target-hp"><i id="target-hp-fill"></i></div>
+          <div class="target-foot"><span>THREAT LOCKED</span><b id="target-hp-text">100%</b></div>
+        </div>
+
+        <div class="reticle" id="reticle">
+          <div class="reticle-ring"></div>
+          <div class="reticle-dot"></div>
+          <span class="reticle-tick t"></span><span class="reticle-tick b"></span>
+          <span class="reticle-tick l"></span><span class="reticle-tick r"></span>
+          <div class="reticle-brackets"><i></i><i></i><i></i><i></i></div>
+          <div class="hitmarker" id="hitmarker"><i></i><i></i><i></i><i></i></div>
+          <div class="reticle-label" id="reticle-label">30MM VULCAN</div>
+        </div>
+
+        <div class="flight-hud">
+          <div class="flight-row"><span>ALT</span><b id="alt">052</b><i>M</i></div>
+          <div class="flight-row"><span>SPD</span><b id="spd">000</b><i>KTS</i></div>
+          <div class="flight-row"><span>HULL</span><b id="hull-pct">100</b><i>%</i></div>
+          <div class="hull-bar"><i id="hull-fill"></i></div>
+          <div class="heading" id="heading">HDG 000</div>
+        </div>
+
+        <div class="weapon-hud">
+          <div class="weapon-line">
+            <span class="weapon-icon">≡</span>
+            <div><span>30MM VULCAN</span><b>∞</b></div>
+            <small id="weapon-level">MK. I</small>
+          </div>
+          <div class="heat-bar"><i id="heat-fill"></i><span id="heat-state">NOMINAL</span></div>
+          <div class="weapon-line missile-line">
+            <span class="weapon-icon missile-icon">⌁</span>
+            <div><span>AGM-114 HELLFIRE</span><b id="missile-count">02</b></div>
+            <small id="missile-state">READY</small>
+          </div>
+          <div class="weapon-line perks-line" id="perks-line">
+            <span class="perk-chip">STOCK AIRFRAME</span>
+          </div>
+        </div>
+
+        <div class="radar-wrap">
+          <div class="radar-head"><span>TACTICAL RADAR</span><b>2 KM</b></div>
+          <canvas id="radar" width="220" height="220"></canvas>
+          <div class="radar-sweep"></div>
+          <div class="radar-legend"><span><i class="dot kaiju"></i>KAIJU</span><span><i class="dot flyer"></i>AIR</span><span><i class="dot you"></i>YOU</span></div>
+        </div>
+
+        <div class="kill-feed" id="kill-feed"></div>
+
+        <div class="wave-banner" id="wave-banner">
+          <span class="banner-kicker" id="banner-kicker">WAVE 01</span>
+          <b id="banner-main">BREACH DETECTED</b>
+          <span class="banner-sub" id="banner-sub">CENTRAL AVENUE // 2 HOSTILES</span>
+        </div>
+
+        <div class="warning-banner" id="warning-banner">
+          <span>!</span>
+          <b id="warning-text">MISSILE INBOUND</b>
+        </div>
+
+        <div class="combo" id="combo">
+          <span>COMBO</span><b id="combo-value">x2</b><i><em id="combo-fill"></em></i>
+        </div>
+
+        <div class="touch-ui" id="touch-ui">
+          <div class="joystick-zone" id="joystick-zone">
+            <div class="joystick-ring"><div class="joystick-knob" id="joystick-knob"></div></div>
+            <span>THRUST</span>
+          </div>
+          <div class="touch-actions">
+            <button class="touch-btn alt-btn" id="touch-up" type="button">▲<small>UP</small></button>
+            <button class="touch-btn alt-btn" id="touch-down" type="button">▼<small>DOWN</small></button>
+            <button class="touch-btn missile-btn" id="touch-missile" type="button">MSL<small id="touch-missile-count">02</small></button>
+            <button class="touch-btn fire-btn" id="touch-fire" type="button">FIRE<small>HOLD</small></button>
+          </div>
+          <div class="look-hint" id="look-hint">DRAG TO AIM</div>
+        </div>
+
+        <div class="hud-footer">
+          <span><kbd>ESC</kbd> PAUSE</span>
+          <span><kbd>LMB</kbd> FIRE</span>
+          <span><kbd>RMB</kbd> MISSILE</span>
+          <span><kbd>SHIFT</kbd> BOOST</span>
+          <span class="hud-warning" id="boundary-warning">RETURN TO COMBAT ZONE</span>
+        </div>
+      </section>
+
+      <!-- ══════════════ UPGRADE SCREEN ══════════════ -->
+      <section id="upgrade" class="screen modal-screen hidden" aria-hidden="true">
+        <div class="modal-backdrop upgrade-backdrop"></div>
+        <div class="upgrade-shell">
+          <header class="upgrade-header">
+            <div>
+              <div class="panel-kicker"><span class="blink-square"></span> SKY CONTROL // REARM</div>
+              <h2>SECTOR <span>SECURED</span></h2>
+              <p>Requisition one field upgrade before the next breach.</p>
+            </div>
+            <div class="upgrade-wave">
+              <span>WAVE CLEARED</span>
+              <b id="upgrade-wave-cleared">01</b>
+              <small id="upgrade-next-label">NEXT: WAVE 02</small>
+            </div>
+          </header>
+
+          <div class="upgrade-stats">
+            <div><span>CITY INTEGRITY</span><b id="upgrade-city">100%</b></div>
+            <div><span>HULL INTEGRITY</span><b id="upgrade-hull">100%</b></div>
+            <div><span>KAIJU KILLED</span><b id="upgrade-kills">0</b></div>
+            <div><span>SCORE</span><b id="upgrade-score">0</b></div>
+          </div>
+
+          <div class="upgrade-cards" id="upgrade-cards"></div>
+
+          <footer class="upgrade-footer">
+            <div class="upgrade-tip" id="upgrade-tip">SELECT ONE UPGRADE</div>
+            <button id="deploy-next-btn" class="btn btn-primary" type="button" disabled>
+              <span class="btn-index">NEXT</span>
+              <span class="btn-label">DEPLOY WAVE 02</span>
+              <span class="btn-arrow">↗</span>
+            </button>
+          </footer>
+        </div>
+      </section>
+
+      <!-- ══════════════ PAUSE ══════════════ -->
+      <section id="pause" class="screen modal-screen hidden" aria-hidden="true">
+        <div class="modal-backdrop"></div>
+        <div class="pause-card">
+          <div class="panel-kicker">FLIGHT SUSPENDED</div>
+          <h2>PAUSED</h2>
+          <p>Engines holding. The city will wait — for now.</p>
+          <div class="pause-actions">
+            <button id="resume-btn" class="btn btn-primary" type="button"><span class="btn-label">RESUME MISSION</span></button>
+            <button id="quit-btn" class="btn btn-ghost" type="button"><span class="btn-label">ABORT TO MENU</span></button>
+          </div>
+          <div class="pause-controls"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> FLY <span>·</span> <kbd>R</kbd><kbd>F</kbd> ALTITUDE <span>·</span> <kbd>LMB</kbd> FIRE <span>·</span> <kbd>RMB</kbd> MISSILE</div>
+        </div>
+      </section>
+
+      <!-- ══════════════ GAME OVER ══════════════ -->
+      <section id="gameover" class="screen modal-screen hidden" aria-hidden="true">
+        <div class="modal-backdrop gameover-backdrop"></div>
+        <div class="gameover-card">
+          <div class="panel-kicker danger" id="gameover-kicker">SIGNAL LOST</div>
+          <h2 id="gameover-title">AIRFRAME<br /><span>LOST</span></h2>
+          <p id="gameover-text">The AH-79 is down. Sector 07 remains under kaiju control.</p>
+          <div class="gameover-stats">
+            <div><span>FINAL SCORE</span><b id="final-score">0</b></div>
+            <div><span>WAVES CLEARED</span><b id="final-wave">0</b></div>
+            <div><span>KAIJU KILLED</span><b id="final-kills">0</b></div>
+            <div><span>ACCURACY</span><b id="final-accuracy">0%</b></div>
+          </div>
+          <div class="gameover-best" id="gameover-best">NEW PERSONAL BEST</div>
+          <div class="gameover-actions">
+            <button id="retry-btn" class="btn btn-primary" type="button"><span class="btn-label">RE-DEPLOY</span><span class="btn-arrow">↗</span></button>
+            <button id="menu-btn" class="btn btn-ghost" type="button"><span class="btn-label">RETURN TO MENU</span></button>
+          </div>
+        </div>
+      </section>
+
+      <div id="transition" class="transition"></div>
+    </div>
+
+  </body>
+</html>
