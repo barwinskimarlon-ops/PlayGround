@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#03151b" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%2303151b' stroke='%2374ffe0'/%3E%3Cpath d='M11 9v14M21 9v14M11 16h10' stroke='%2374ffe0' stroke-width='1.5'/%3E%3C/svg%3E" />
+    <meta name="description" content="HALOVALE — descend into a living ocean unlike Earth. Catalogue impossible creatures. Survive the hunt." />
+    <title>HALOVALE — The Drift</title>
+  </head>
+  <body>
+    <main id="app">
+      <canvas id="scene" aria-label="An alien ocean"></canvas>
+
+      <div class="screen-grade" aria-hidden="true"></div>
+      <div class="grain" aria-hidden="true"></div>
+      <div class="vignette" aria-hidden="true"></div>
+      <div class="scanlines" aria-hidden="true"></div>
+
+      <section id="title-screen" aria-label="Title screen">
+        <header class="title-top">
+          <div class="micro-brand">
+            <span class="brand-mark">H</span>
+            <span>DEEP FIELD DIVISION</span>
+          </div>
+          <div class="title-top-right">
+            <span class="live-dot"></span>
+            <span>LIVE FEED / 07</span>
+          </div>
+        </header>
+
+        <div class="title-center">
+          <p class="kicker">A LIVING OCEAN <span>/</span> NOT EARTH</p>
+          <h1>HALO<span>VALE</span></h1>
+          <p class="lede">
+            Descend into the Drift. Catalogue five impossible species.<br />
+            Do not let the Rift Hunter find you first.
+          </p>
+          <div class="start-wrap">
+            <button id="start-btn" type="button" aria-label="Start"><span>Start</span><i aria-hidden="true"></i></button>
+            <span class="start-note">DIVE LOG 07 · −13 M</span>
+          </div>
+        </div>
+
+        <footer class="title-bottom">
+          <div class="title-specs">
+            <span>05 SPECIES</span>
+            <span>01 OCEAN</span>
+            <span>NO HORIZON</span>
+          </div>
+          <p>MOUSE + WASD <span>·</span> HEADPHONES RECOMMENDED</p>
+        </footer>
+      </section>
+
+      <section id="hud" class="hidden" aria-label="Dive interface">
+        <div class="hud-top">
+          <div class="hud-brand">
+            <div class="hud-brand-line"><span class="brand-mark">H</span> HALOVALE</div>
+            <div class="hud-brand-sub">EXPEDITION 07 / THE DRIFT</div>
+          </div>
+
+          <div class="mission-panel">
+            <div class="mission-head">
+              <span>MISSION</span>
+              <span>CATALOGUE THE DRIFT</span>
+            </div>
+            <div class="pips" id="species-pips" aria-label="Species catalogued">
+              <i></i><i></i><i></i><i></i><i></i>
+            </div>
+            <div class="mission-sub"><b id="species-count">0</b>/5 SPECIES <span>·</span> <b id="mote-count">0</b> MOTES</div>
+          </div>
+
+          <div class="vitals">
+            <div class="vital-label"><span>SIGNAL INTEGRITY</span><b id="integrity-text">100%</b></div>
+            <div class="meter"><div id="integrity-fill"></div></div>
+            <div class="vital-label minor"><span>ECHO PULSE</span><b id="pulse-text">READY</b></div>
+            <div class="meter thin"><div id="pulse-fill"></div></div>
+          </div>
+        </div>
+
+        <div class="depth-readout">
+          <div class="depth-label">CURRENT DEPTH</div>
+          <div class="depth-value"><span>−</span><b id="depth-value">018.0</b><em>M</em></div>
+          <div class="depth-sub" id="zone-name">SUNLIT DRIFT</div>
+        </div>
+
+        <div class="depth-ruler" aria-hidden="true">
+          <div class="ruler-line"></div>
+          <div class="ruler-ticks">
+            <span style="--y: 0%">000</span>
+            <span style="--y: 20%">020</span>
+            <span style="--y: 40%">040</span>
+            <span style="--y: 60%">060</span>
+            <span style="--y: 80%">080</span>
+            <span style="--y: 100%">100</span>
+          </div>
+          <div class="ruler-marker" id="ruler-marker"></div>
+        </div>
+
+        <div class="crosshair" aria-hidden="true"><i></i><i></i><span></span></div>
+
+        <div id="specimen-card" class="specimen-card">
+          <div class="specimen-top"><span id="specimen-index">SPECIMEN / 01</span><span id="specimen-status">IN RANGE</span></div>
+          <h2 id="specimen-name">VEIL SOVEREIGN</h2>
+          <div class="specimen-latin" id="specimen-latin">VELIFERA CATHEDRALIS</div>
+          <div class="specimen-rule"></div>
+          <p id="specimen-desc">A cathedral-sized filter feeder that drifts on the deep current, singing through its crown.</p>
+          <div class="specimen-stats">
+            <div><span>SIZE</span><b id="specimen-size">24 M</b></div>
+            <div><span>BEHAVIOR</span><b id="specimen-behavior">DRIFT / FILTER</b></div>
+          </div>
+          <div class="scan-label"><span>CATALOGUE PROGRESS</span><b id="scan-percent">0%</b></div>
+          <div class="scan-track"><div id="scan-fill"></div></div>
+          <div class="scan-hint" id="scan-hint">HOLD <kbd>E</kbd> TO SCAN</div>
+        </div>
+
+        <div id="scan-prompt" class="scan-prompt hidden">
+          <span class="prompt-pulse"></span>
+          <div><b id="prompt-name">VEIL SOVEREIGN</b><small id="prompt-distance">36 M · HOLD E TO CATALOGUE</small></div>
+        </div>
+
+        <div class="radar-wrap">
+          <canvas id="radar" width="180" height="180" aria-label="Sonar"></canvas>
+          <div class="radar-label"><span>SONAR</span><b id="radar-state">PASSIVE</b></div>
+        </div>
+
+        <div class="controls-hint" id="controls-hint">
+          <span><kbd>WASD</kbd> SWIM</span>
+          <span><kbd>SPACE</kbd>/<kbd>C</kbd> RISE / SINK</span>
+          <span><kbd>E</kbd> SCAN</span>
+          <span><kbd>Q</kbd> PULSE</span>
+        </div>
+
+        <div class="status-toast" id="status-toast" role="status"></div>
+        <div class="damage-flash" id="damage-flash" aria-hidden="true"></div>
+        <div class="pulse-flash" id="pulse-flash" aria-hidden="true"></div>
+
+        <button id="sound-btn" class="sound-btn" type="button" aria-label="Toggle sound"><span></span><i></i></button>
+
+        <div class="mobile-controls" aria-label="Touch controls">
+          <div class="stick-zone" id="stick-zone">
+            <div class="stick-ring"><div class="stick-knob" id="stick-knob"></div></div>
+            <span>MOVE</span>
+          </div>
+          <div class="look-zone" id="look-zone"><span>DRAG TO LOOK</span></div>
+          <div class="touch-actions">
+            <button type="button" data-action="up" aria-label="Rise">↑</button>
+            <button type="button" data-action="down" aria-label="Sink">↓</button>
+            <button type="button" class="touch-pulse" data-action="pulse" aria-label="Echo pulse">PULSE</button>
+            <button type="button" class="touch-scan" data-action="scan" aria-label="Scan">SCAN</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="end-screen" class="end-screen hidden" aria-label="Expedition result">
+        <div class="end-inner">
+          <p class="end-kicker" id="end-kicker">EXPEDITION 07 / CLOSED</p>
+          <h2 id="end-title">SURVEY COMPLETE</h2>
+          <p id="end-copy">The Drift has been catalogued. Somewhere below, something larger is still awake.</p>
+          <div class="end-stats">
+            <div><span>SPECIES</span><b id="end-species">5 / 5</b></div>
+            <div><span>MOTES</span><b id="end-motes">0</b></div>
+            <div><span>DEEPEST</span><b id="end-depth">0 M</b></div>
+          </div>
+          <button id="restart-btn" type="button" aria-label="Dive again">Dive again</button>
+        </div>
+      </section>
+
+      <div id="loading" class="loading">
+        <div class="loading-ring"></div>
+        <span>SYNCING CURRENT</span>
+      </div>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
