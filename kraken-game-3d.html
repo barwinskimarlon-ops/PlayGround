@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Kraken Hunter 3D</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #05101c; color: #fff; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; touch-action: none; }
+  #wrap { width: 100%; height: 100%; position: relative; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; }
+
+  /* ---------- UI overlay ---------- */
+  #ui {
+    position: absolute; inset: 12px; pointer-events: none;
+    display: flex; flex-direction: column; justify-content: space-between;
+  }
+  .top { display: flex; justify-content: space-between; align-items: flex-start; width: 100%; }
+  #healthbar { width: 150px; height: 14px; border: 2px solid #fff; background: #111; border-radius: 4px; overflow: hidden; }
+  #healthfill { height: 100%; width: 100%; background: #2ecc71; }
+  #score { font-size: 17px; color: #ffd166; text-shadow: 0 2px 6px rgba(0,0,0,.7); font-weight: 800; }
+  #hud { font-size: 15px; color: #e8f4fd; text-shadow: 0 2px 6px rgba(0,0,0,.7); margin-top: 6px; }
+  .hint { font-size: 12px; color: #9fb3c8; margin-top: 4px; max-width: 270px; line-height: 1.5; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
+
+  /* ---------- Game over ---------- */
+  #overlay {
+    position: absolute; inset: 0; background: rgba(3, 6, 14, .88);
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    pointer-events: auto; text-align: center;
+  }
+  #msg { font-size: 36px; font-weight: 900; letter-spacing: 3px; color: #ff6b6b; margin-bottom: 8px; text-shadow: 0 3px 10px rgba(0,0,0,.6); }
+  #final { font-size: 21px; color: #ffd166; margin-bottom: 22px; }
+  button {
+    padding: 12px 30px; font-size: 18px; font-weight: 800; color: #fff;
+    background: linear-gradient(180deg, #e74c3c, #c0392b); border: none; border-radius: 10px;
+    cursor: pointer; box-shadow: 0 4px 0 #8e2a22; pointer-events: auto;
+  }
+  button:active { transform: translateY(2px); box-shadow: 0 2px 0 #8e2a22; }
+  .controls { margin-top: 16px; font-size: 13px; color: #9fb3c8; line-height: 1.6; }
+
+  /* ---------- Joystick ---------- */
+  #joy-base {
+    position: absolute; left: 18px; bottom: 18px; width: 118px; height: 118px;
+    border: 3px solid rgba(255,255,255,.35); border-radius: 50%;
+    background: rgba(255,255,255,.07); pointer-events: none; user-select: none; z-index: 10;
+  }
+  #joy-knob {
+    position: absolute; left: 50%; top: 50%; width: 52px; height: 52px;
+    background: rgba(255,255,255,.75); border-radius: 50%;
+    transform: translate(-50%,-50%); pointer-events: none; box-shadow: 0 3px 8px rgba(0,0,0,.5);
+  }
+  #boost {
+    position: absolute; right: 18px; bottom: 18px; width: 78px; height: 78px;
+    border-radius: 50%; background: rgba(255,107,107,.22); border: 2px solid #ff6b6b;
+    color: #ff6b6b; font-size: 10px; font-weight: 900; display: flex; align-items: center; justify-content: center;
+    pointer-events: auto; user-select: none; z-index: 10; line-height: 1.15; text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div id="wrap">
+  <canvas id="c"></canvas>
+
+  <div id="joy-base"><div id="joy-knob"></div></div>
+  <div id="boost">BOOST</div>
+
+  <div id="ui">
+    <div class="top">
+      <div id="healthbar"><div id="healthfill"></div></div>
+      <div id="score">Score: 0</div>
+    </div>
+    <div id="hud">Health: 100%</div>
+    <div class="hint">Drag the joystick to guide the Kraken.<br>Swim into prey to eat.<br>Sharks bite back — a risky meal.</div>
+  </div>
+
+  <div id="overlay">
+    <div id="msg">KRAKEN FALLEN</div>
+    <div id="final">Score: 0</div>
+    <button id="restart">Emerge Again</button>
+    <div class="controls">Drag joystick to move &bull; Swim into prey to eat &bull; Sharks damage you &bull; Islands are solid</div>
+  </div>
+</div>
+
+<!-- Three.js (CDN) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r158/three.min.js"></script>
+<script>
+/* ------------------------------------------------------------------ */
+/*  Kraken Hunter 3D  —  single file, mobile + desktop                */
+/* ------------------------------------------------------------------ */
+if (typeof THREE === 'undefined') {
+  document.body.innerHTML = '<div style="padding:24px;font-family:sans-serif;color:#fff;background:#05101c;text-align:center;">Failed to load Three.js. Check your internet connection and refresh.</div>';
+  throw new Error('Three.js not loaded');
+}
+
+const canvas = document.getElementById('c');
+const $ = id => document.getElementById(id);
+
+// ---------- sizing ----------
+let W, H, aspect;
+function size(){
+  W = innerWidth; H = innerHeight;
+  aspect = W / H;
+  renderer.setSize(W, H);
+  camera.aspect = aspect;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', size);
+
+// ---------- scene / camera / renderer ----------
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x05101c, 30, 260);
+
+const camera = new THREE.PerspectiveCamera(55, aspect, 0.1, 900);
+camera.position.set(0, 14, 22);
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setSize(W, H);
+size();
+
+// ---------- lighting ----------
+const amb = new THREE.AmbientLight(0xffffff, 0.35);
+scene.add(amb);
+const sun = new THREE.DirectionalLight(0xffffff, 0.9);
+sun.position.set(60, 80, 20);
+scene.add(sun);
+
+// ---------- water (GPU wave shader) ----------
+const waterVert = `
+  uniform float uTime;
+  varying vec3 vPos;
+  varying float vWave;
+  void main(){
+    vec3 p = position;
+    float w = sin(p.x*0.09 + uTime*1.1) * 0.45;
+    w += cos(p.z*0.07 + uTime*0.9) * 0.35;
+    w += sin(p.x*0.22 + p.z*0.18 + uTime*1.4) * 0.25;
+    p.y += w;
+    vPos = p;
+    vWave = w;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(p,1.0);
+  }
+`;
+const waterFrag = `
+  varying vec3 vPos;
+  varying float vWave;
+  void main(){
+    float deep = smoothstep(0.0, 1.0, abs(vWave));
+    vec3 c = mix(vec3(0.035,0.075,0.15), vec3(0.09,0.17,0.30), deep);
+    gl_FragColor = vec4(c, 1.0);
+  }
+`;
+const waterMat = new THREE.ShaderMaterial({
+  uniforms: { uTime: { value: 0 } },
+  vertexShader: waterVert, fragmentShader: waterFrag,
+  fog: true
+});
+const water = new THREE.Mesh(new THREE.PlaneGeometry(2200, 2200, 64, 64), waterMat);
+water.rotation.x = -Math.PI / 2;
+water.position.y = 0.05;
+scene.add(water);
+
+// ---------- materials ----------
+const matKrakenBody = new THREE.MeshStandardMaterial({ color: 0x361221, flatShading: true });
+const matKrakenDark = new THREE.MeshStandardMaterial({ color: 0x1f0b12, flatShading: true });
+const matEye = new THREE.MeshBasicMaterial({ color: 0xffffff });
+const matPupil = new THREE.MeshBasicMaterial({ color: 0x000000 });
+
+const matShip = new THREE.MeshStandardMaterial({ color: 0x8d99ae, flatShading: true });
+const matShipDark = new THREE.MeshStandardMaterial({ color: 0x4a5568, flatShading: true });
+const matSail = new THREE.MeshBasicMaterial({ color: 0xeef2f3 });
+
+const matTurtle = new THREE.MeshStandardMaterial({ color: 0x7dcea0, flatShading: true });
+const matTurtleDark = new THREE.MeshStandardMaterial({ color: 0x2e7d5b, flatShading: true });
+
+const matWhale = new THREE.MeshStandardMaterial({ color: 0x5d6d7e, flatShading: true });
+const matWhaleBelly = new THREE.MeshStandardMaterial({ color: 0xdfe6e9, flatShading: true });
+
+const matShark = new THREE.MeshStandardMaterial({ color: 0xbdc3c7, flatShading: true });
+const matSharkDark = new THREE.MeshStandardMaterial({ color: 0x7f8c8d, flatShading: true });
+
+const matHuman = new THREE.MeshStandardMaterial({ color: 0xf5b08a, flatShading: true });
+const matIsland = new THREE.MeshStandardMaterial({ color: 0xe6d5b8, flatShading: true });
+const matIslandGrass = new THREE.MeshStandardMaterial({ color: 0x5d8a4a, flatShading: true });
+
+// ---------- player (kraken) ----------
+const kraken = new THREE.Group();
+scene.add(kraken);
+
+// body
+const body = new THREE.Mesh(new THREE.SphereGeometry(3.4, 14, 14), matKrakenBody);
+body.scale.set(1, 0.55, 1);
+kraken.add(body);
+
+// eye + pupil (front = local +Z)
+const eye = new THREE.Mesh(new THREE.SphereGeometry(0.75, 10, 10), matEye);
+eye.position.set(2.1, 0.9, 3.1);
+kraken.add(eye);
+const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 8), matPupil);
+pupil.position.set(0, 0, 0.35);
+eye.add(pupil);
+
+
+// tentacles
+const tentacles = [];
+const TENT_COUNT = 8;
+function buildTentacle(i){
+  const grp = new THREE.Group();
+  // aim root outward around body + angled down
+  const ang = (i / TENT_COUNT) * Math.PI * 2;
+  grp.position.set(Math.cos(ang)*2.6, -1.2, Math.sin(ang)*2.6);
+  grp.rotation.y = ang;
+  grp.rotation.x = Math.PI * 0.52 + 0.35;
+
+  const segs = 7;
+  for (let s = 0; s < segs; s++) {
+    const seg = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.9 - s*0.18, 1.55 - s*0.18, 3.6, 6),
+      s % 2 === 0 ? matKrakenBody : matKrakenDark
+    );
+    seg.position.y = -(s * 2.6 + 1.6);
+    seg.userData = { seg: s, baseY: 0, bend: (s / segs) };
+    grp.add(seg);
+  }
+  kraken.add(grp);
+  tentacles.push(grp);
+}
+for (let i = 0; i < TENT_COUNT; i++) buildTentacle(i);
+
+// player physics state
+const player = {
+  x: 0, z: 0,
+  vx: 0, vz: 0,
+  radius: 3.2,
+  health: 100, maxHealth: 100,
+  score: 0,
+  hurt: 0,      // hurt cooldown frames-ish
+  boost: 0,     // boost timer
+  angle: 0
+};
+
+// ---------- entities ----------
+const entities = [];
+const islands = [];   // {mesh, x, z, r}
+const particles = [];
+const MAX_ENT = 16;
+const BOUND = 360;
+
+function rand(a,b){ return a + Math.random()*(b-a); }
+function dist2D(a,b){ return Math.hypot(a.x-b.x, a.z-b.z); }
+
+function spawnParticles(x,y,z,color,count){
+  for(let i=0;i<count;i++){
+    const p = new THREE.Mesh(new THREE.SphereGeometry(rand(0.25,0.55),6,6), new THREE.MeshBasicMaterial({color}));
+    p.position.set(x,y,z);
+    const ang = Math.random()*Math.PI*2;
+    const sp = rand(0.12,0.45);
+    p.userData = { vx: Math.cos(ang)*sp, vy: rand(0.15,0.5), vz: Math.sin(ang)*sp, life: rand(14,30), maxLife: 30 };
+    scene.add(p);
+    particles.push(p);
+  }
+}
+
+// --- entity blueprints ---
+function makeShip(){
+  const grp = new THREE.Group();
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(6, 2.2, 14), matShip);
+  grp.add(hull);
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(4, 2.6, 5), matShipDark);
+  cab.position.set(0, 1.8, -2);
+  grp.add(cab);
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.25,0.25,6,6), matShipDark);
+  mast.position.set(0, 5.2, -2);
+  grp.add(mast);
+  const sail = new THREE.Mesh(new THREE.PlaneGeometry(5,6), matSail);
+  sail.rotation.x = Math.PI/2;
+  sail.position.set(0, 5.2, -2);
+  grp.add(sail);
+  return { mesh: grp, type:'ship', r: 5.5, speed: 0.18, points: 100, heal: 18, fleeRange: 260 };
+}
+function makeTurtle(){
+  const grp = new THREE.Group();
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(2.4, 10, 10), matTurtle);
+  shell.scale.set(1,0.5,1);
+  grp.add(shell);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.9,8,8), matTurtleDark);
+  head.position.set(2.7,0,0);
+  grp.add(head);
+  const fl1 = new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.35,2.2,6), matTurtleDark);
+  fl1.position.set(-2.1,0,-0.5); fl1.rotation.z=0.6; grp.add(fl1);
+  const fl2 = fl1.clone(); fl2.position.set(-2.1,0,0.5); fl2.rotation.z=-0.6; grp.add(fl2);
+  const fl3 = fl1.clone(); fl3.position.set(2.1,0,-0.5); fl3.rotation.z=-0.6; grp.add(fl3);
+  const fl4 = fl1.clone(); fl4.position.set(2.1,0,0.5); fl4.rotation.z=0.6; grp.add(fl4);
+  return { mesh: grp, type:'turtle', r: 2.6, speed: 0.14, points: 25, heal: 6, fleeRange: 190 };
+}
+function makeWhale(){
+  const grp = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(5, 12, 12), matWhale);
+  body.scale.set(1.6,0.85,1);
+  grp.add(body);
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(5,12,12), matWhaleBelly);
+  belly.scale.set(1.55,0.8,0.95); belly.position.set(0,0.6,2.2); grp.add(belly);
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(1.6,5,8), matWhale);
+  tail.position.set(-6.2,0,0); tail.rotation.z=Math.PI/2; grp.add(tail);
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.35,6,6), matEye); eye.position.set(6.3,1.4,1.6); grp.add(eye);
+  return { mesh: grp, type:'whale', r: 7.5, speed: 0.12, points: 160, heal: 32, fleeRange: 320 };
+}
+function makeShark(){
+  const grp = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(2.6, 10, 10), matShark);
+  body.scale.set(1.75,0.55,1); grp.add(body);
+  const fin = new THREE.Mesh(new THREE.ConeGeometry(0.9,2.6,8), matSharkDark);
+  fin.position.set(0,1.3,0); fin.rotation.x=-Math.PI/2; grp.add(fin);
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.8,2.6,8), matShark);
+  tail.position.set(-3.1,0,0); tail.rotation.z=Math.PI/2; grp.add(tail);
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.2,6,6), matPupil); eye.position.set(2.5,0.4,1); grp.add(eye);
+  return { mesh: grp, type:'shark', r: 3.4, speed: 0.26, points: 70, heal: 14, huntRange: 430 };
+}
+function makeHuman(){
+  const grp = new THREE.Group();
+  const bod = new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.55,1.6,8), matHuman);
+  bod.position.y=0.8; grp.add(bod);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.5,8,8), matHuman); head.position.y=1.85; grp.add(head);
+  return { mesh: grp, type:'human', r: 0.9, speed: 0.2, points: 12, heal: 3, fleeRange: 140 };
+}
+
+function spawnEntity(type){
+  let tries=0, x, z, r, ent;
+  const proto = {ship:makeShip,turtle:makeTurtle,whale:makeWhale,shark:makeShark,human:makeHuman}[type]();
+  r = proto.r;
+  do {
+    x = rand(-BOUND+20, BOUND-20); z = rand(-BOUND+20, BOUND-20);
+    tries++;
+  } while(tries<50 && dist2D({x,z}, player) < 45);
+  const e = Object.assign(proto, { x, z, y: 1.5, vx: (Math.random()-0.5)*0.12, vz: (Math.random()-0.5)*0.12, angle: Math.random()*Math.PI*2, wander: Math.random()*100, alive: true });
+  e.mesh.position.set(x, e.y, z);
+  scene.add(e.mesh);
+  entities.push(e);
+}
+
+function spawnIsland(){
+  let tries=0, x, z, r;
+  do {
+    r = rand(14, 34);
+    x = rand(-BOUND+45, BOUND-45); z = rand(-BOUND+45, BOUND-45);
+    tries++;
+  } while(tries<60 && (dist2D({x,z}, player) < r + player.radius + 55 || islands.some(i=> dist2D({x,z}, i) < r+i.r+30)));
+  const isl = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(r, r*0.95, 4, 10), matIsland);
+  base.position.y = 2; isl.add(base);
+  const top = new THREE.Mesh(new THREE.CylinderGeometry(r*1.08, r*0.75, 5, 10), matIslandGrass);
+  top.position.y = 5.6; isl.add(top);
+  // small palm-ish cones
+  for(let k=0;k<3;k++){
+    const a = Math.random()*Math.PI*2; const rr = r*0.62;
+    const tr = new THREE.Mesh(new THREE.ConeGeometry(1.1, 4.5, 6), matIslandGrass);
+    tr.position.set(Math.cos(a)*rr, 6.6, Math.sin(a)*rr); tr.rotation.x = 0.35; isl.add(tr);
+  }
+  isl.position.set(x, 0, z);
+  scene.add(isl);
+  islands.push({ mesh: isl, x, z, r });
+}
+
+const ENT_COLOR = { ship:0x8d99ae, turtle:0x7dcea0, whale:0x5d6d7e, shark:0xbdc3c7, human:0xf5b08a };
+function eat(e){
+  player.score += e.points;
+  player.health = Math.min(player.maxHealth, player.health + e.heal);
+  spawnParticles(e.x, e.y+1, e.z, ENT_COLOR[e.type] || 0xffffff, 12);
+  e.alive = false;
+  scene.remove(e.mesh);
+  updateHUD();
+}
+
+function hurtPlayer(amount){
+  if (player.hurt > 0) return;
+  player.health = Math.max(0, player.health - amount);
+  player.hurt = 28;
+  // knockback handled by caller
+  spawnParticles(player.x, 1.5, player.z, 0xff6b6b, 18);
+  updateHUD();
+  if (player.health <= 0) gameOver();
+}
+
+function updateHUD(){
+  const pct = Math.round((player.health/player.maxHealth)*100);
+  $('healthfill').style.width = pct + '%';
+  $('healthfill').style.background = pct > 35 ? '#2ecc71' : (pct > 15 ? '#f1c40f' : '#e74c3c');
+  $('score').textContent = 'Score: ' + player.score;
+  $('hud').textContent = 'Health: ' + pct + '%';
+}
+
+// ---------- controls (joystick + keyboard) ----------
+const joyBase = $('joy-base'), joyKnob = $('joy-knob');
+const input = { left:false, right:false, up:false, down:false };
+const joy = { active:false, vx:0, vz:0, sx:0, sy:0 };
+
+function joyStart(e){
+  e.preventDefault();
+  const t = e.touches ? e.touches[0] : e;
+  joy.active = true; joy.sx = t.clientX; joy.sy = t.clientY;
+  joy.vx = 0; joy.vz = 0;
+  joyKnob.style.transform = 'translate(-50%,-50%)';
+}
+function joyMove(e){
+  if(!joy.active) return;
+  e.preventDefault();
+  const t = e.touches ? e.touches[0] : e;
+  let dx = t.clientX - joy.sx, dy = t.clientY - joy.sy;
+  const r = Math.hypot(dx, dy), maxR = 46;
+  if (r > maxR){ dx *= maxR/r; dy *= maxR/r; }
+  joyKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+  joy.vx = dx / maxR;
+  joy.vz = -dy / maxR; // up on screen = +Z (forward into screen)
+}
+function joyEnd(){
+  joy.active = false; joy.vx = 0; joy.vz = 0;
+  joyKnob.style.transform = 'translate(-50%,-50%)';
+}
+// touch
+joyBase.addEventListener('touchstart', joyStart, {passive:false});
+joyBase.addEventListener('touchmove', joyMove, {passive:false});
+joyBase.addEventListener('touchend', joyEnd);
+joyBase.addEventListener('touchcancel', joyEnd);
+// mouse (desktop)
+joyBase.addEventListener('mousedown', joyStart);
+window.addEventListener('mousemove', joyMove);
+window.addEventListener('mouseup', joyEnd);
+
+// keyboard
+window.addEventListener('keydown', e=>{
+  const k = e.key.toLowerCase();
+  if(k==='arrowleft'||k==='a') input.left=true;
+  if(k==='arrowright'||k==='d') input.right=true;
+  if(k==='arrowup'||k==='w') input.up=true;
+  if(k==='arrowdown'||k==='s') input.down=true;
+});
+window.addEventListener('keyup', e=>{
+  const k = e.key.toLowerCase();
+  if(k==='arrowleft'||k==='a') input.left=false;
+  if(k==='arrowright'||k==='d') input.right=false;
+  if(k==='arrowup'||k==='w') input.up=false;
+  if(k==='arrowdown'||k==='s') input.down=false;
+});
+
+// boost button
+$('boost').addEventListener('touchstart', e=>{ e.preventDefault(); player.boost = 40; }, {passive:false});
+$('boost').addEventListener('mousedown', e=>{ player.boost = 40; });
+
+function restartGame(){
+  player.x = 0; player.z = 0; player.vx = 0; player.vz = 0;
+  player.health = player.maxHealth; player.score = 0; player.hurt = 0; player.boost = 0;
+  kraken.position.set(0,0,0); kraken.rotation.set(0,0,0);
+  entities.forEach(e=> scene.remove(e.mesh)); entities.length = 0;
+  particles.forEach(p=> scene.remove(p)); particles.length = 0;
+  islands.forEach(i=> scene.remove(i.mesh)); islands.length = 0;
+  joy.vx = 0; joy.vz = 0;
+  updateHUD();
+  $('overlay').style.display = 'none';
+  gameOvered = false;
+  // world
+  for(let i=0;i<5;i++) spawnIsland();
+  for(let i=0;i<3;i++) spawnEntity('ship');
+  for(let i=0;i<4;i++) spawnEntity('turtle');
+  for(let i=0;i<2;i++) spawnEntity('whale');
+  for(let i=0;i<3;i++) spawnEntity('shark');
+  for(let i=0;i<5;i++) spawnEntity('human');
+}
+$('restart').addEventListener('click', restartGame);
+
+// ---------- game over ----------
+function gameOver(){
+  gameOvered = true;
+  $('msg').textContent = 'KRAKEN FALLEN';
+  $('final').textContent = 'Final Score: ' + player.score;
+  $('overlay').style.display = 'flex';
+}
+
+// ---------- main loop ----------
+const clock = new THREE.Clock();
+let spawnAcc = 0;
+
+function lerpAngle(a,b,t){
+  let d = b - a;
+  while(d > Math.PI) d -= Math.PI*2;
+  while(d < -Math.PI) d += Math.PI*2;
+  return a + d*t;
+}
+
+function update(dt){
+  if (gameOvered) return;
+  const t = clock.getElapsedTime();
+
+  // water time
+  waterMat.uniforms.uTime.value = t;
+
+  // input direction (joystick + keyboard)
+  let ix = joy.vx, iz = joy.vz;
+  if (input.left) ix = -1; if (input.right) ix = 1;
+  if (input.up) iz = 1; if (input.down) iz = -1;
+  // keyboard overrides/joins: combine gently
+  if (Math.abs(ix) < 0.15 && input.left) ix = -0.9;
+  if (Math.abs(ix) < 0.15 && input.right) ix = 0.9;
+
+  const mult = player.boost > 0 ? 1.9 : 1;
+  if (player.boost > 0) player.boost--;
+
+  const acc = 0.016 * mult;
+  const spdCap = 0.42 * mult;
+  player.vx += ix * acc;
+  player.vz += iz * acc;
+
+  // friction
+  const f = 0.82;
+  player.vx *= f; player.vz *= f;
+
+  // cap
+  const cur = Math.hypot(player.vx, player.vz);
+  if (cur > spdCap){ player.vx *= spdCap/cur; player.vz *= spdCap/cur; }
+
+  // move + island collision (slide)
+  let nx = player.x + player.vx;
+  let nz = player.z + player.vz;
+  for (const isl of islands) {
+    const d = dist2D({x:nx,z:nz}, isl);
+    if (d < isl.r + player.radius + 0.4 && d > 0) {
+      const nx2 = (nx - isl.x)/d, nz2 = (nz - isl.z)/d;
+      nx = isl.x + nx2 * (isl.r + player.radius + 0.4);
+      nz = isl.z + nz2 * (isl.r + player.radius + 0.4);
+      player.vx *= 0.35; player.vz *= 0.35;
+    }
+  }
+  // world bounds (clamp, slight bounce)
+  const b = BOUND - player.radius - 1;
+  if (nx < -b){ nx = -b; player.vx *= -0.5; }
+  if (nx > b){ nx = b; player.vx *= -0.5; }
+  if (nz < -b){ nz = -b; player.vz *= -0.5; }
+  if (nz > b){ nz = b; player.vz *= -0.5; }
+  player.x = nx; player.z = nz;
+  kraken.position.set(nx, 0, nz);
+
+  // face movement
+  const cur2 = Math.hypot(player.vx, player.vz);
+  if (cur2 > 0.04) {
+    const target = Math.atan2(player.vx, player.vz);
+    player.angle = lerpAngle(player.angle, target, 0.18);
+  }
+  kraken.rotation.y = player.angle;
+
+  // body bob & hurt tint
+  const bob = Math.sin(t * 10) * 0.12;
+  kraken.position.y = bob;
+  if (player.hurt > 0){
+    player.hurt--;
+    const flash = Math.sin(t * 40) > 0 ? 0x7a1f2e : 0x361221;
+    matKrakenBody.color.setHex(flash);
+  } else {
+    matKrakenBody.color.setHex(0x361221);
+  }
+
+  // tentacle wave
+  for (let ti = 0; ti < tentacles.length; ti++) {
+    const grp = tentacles[ti];
+    const speedMove = cur2;
+    for (let s = 0; s < grp.children.length; s++) {
+      const seg = grp.children[s];
+      const wave = Math.sin(t * 9 + s * 1.3 + ti * 0.9) * (0.5 + speedMove * 1.5);
+      seg.rotation.x = seg.userData.bend * 1.1 + wave;
+      seg.rotation.z = Math.cos(t * 6 + s * 0.7) * (0.15 + speedMove * 0.6);
+    }
+  }
+  // eye look toward movement
+  if (cur2 > 0.04){
+    pupil.position.z = 0.35 + cur2*0.4;
+    pupil.position.x = Math.sin(player.angle)*0.18;
+    pupil.position.y = Math.cos(player.angle)*0.18;
+  }
+
+  // entities
+  let spawned = false;
+  for (let i = entities.length - 1; i >= 0; i--) {
+    const e = entities[i];
+    if (!e.alive) { scene.remove(e.mesh); entities.splice(i,1); continue; }
+
+    // movement
+    if (e.type === 'shark') {
+      const d = dist2D(player, e);
+      if (d < e.huntRange) {
+        const dx = (player.x - e.x)/d || 0;
+        const dz = (player.z - e.z)/d || 0;
+        e.vx += dx * 0.011; e.vz += dz * 0.011;
+      } else {
+        e.wander += 0.02;
+        e.vx += Math.sin(e.wander)*0.008; e.vz += Math.cos(e.wander)*0.008;
+      }
+    } else {
+      e.wander += 0.018;
+      e.vx += Math.sin(e.wander + e.x*0.02)*0.007;
+      e.vz += Math.cos(e.wander + e.z*0.02)*0.007;
+    }
+    // cap entity speed
+    const es = Math.hypot(e.vx, e.vz);
+    if (es > e.speed){ e.vx *= e.speed/es; e.vz *= e.speed/es; }
+    e.x += e.vx; e.z += e.vz;
+
+    // bounce bounds
+    const eb = BOUND - e.r - 2;
+    if (e.x < -eb){ e.x = -eb; e.vx *= -1; }
+    if (e.x > eb){ e.x = eb; e.vx *= -1; }
+    if (e.z < -eb){ e.z = -eb; e.vz *= -1; }
+    if (e.z > eb){ e.z = eb; e.vz *= -1; }
+
+    // island bounce
+    for (const isl of islands) {
+      const d = dist2D({x:e.x,z:e.z}, isl);
+      if (d < isl.r + e.r && d > 0) {
+        const nx2 = (e.x - isl.x)/d, nz2 = (e.z - isl.z)/d;
+        e.x = isl.x + nx2 * (isl.r + e.r); e.z = isl.z + nz2 * (isl.r + e.r);
+        e.vx *= -0.5; e.vz *= -0.5;
+      }
+    }
+
+    e.mesh.position.set(e.x, e.y + Math.sin(t*3)*0.15, e.z);
+    e.mesh.rotation.y += 0.03;
+    if (e.type === 'shark') e.mesh.rotation.z = Math.sin(t*6)*0.15;
+
+    // collision with player
+    const dd = dist2D(player, e);
+    const reach = player.radius + e.r;
+    if (dd < reach) {
+      if (e.type === 'shark') {
+        // risky meal
+        if (Math.random() < 0.5) {
+          hurtPlayer(14);
+          const kdx = (player.x - e.x) || 1; const kdz = (player.z - e.z) || 1;
+          const kd = Math.hypot(kdx, kdz);
+          player.vx += (kdx/kd)*2.6; player.vz += (kdz/kd)*2.6;
+        } else {
+          eat(e);
+        }
+      } else {
+        eat(e);
+      }
+    }
+  }
+
+  // spawn replacement prey
+  spawnAcc += dt * 22;
+  if (spawnAcc > 70 && entities.length < MAX_ENT){
+    spawnAcc = 0;
+    const roll = Math.random();
+    if (roll < 0.2) spawnEntity('ship');
+    else if (roll < 0.38) spawnEntity('turtle');
+    else if (roll < 0.46) spawnEntity('whale');
+    else if (roll < 0.66) spawnEntity('shark');
+    else spawnEntity('human');
+  }
+
+  // particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.position.x += p.userData.vx;
+    p.position.y += p.userData.vy;
+    p.position.z += p.userData.vz;
+    p.userData.vy -= 0.022; // gravity
+    p.userData.vx *= 0.9; p.userData.vz *= 0.9;
+    p.userData.life--;
+    p.scale.setScalar(p.userData.life / p.userData.maxLife);
+    if (p.userData.life <= 0){ scene.remove(p); particles.splice(i,1); }
+  }
+}
+
+function render(){
+  // camera follows player
+  const front = new THREE.Vector3(Math.sin(player.angle), 0, Math.cos(player.angle));
+  const targetCam = player.position.clone().addScaledVector(front, -18).add(new THREE.Vector3(0, 15, 0));
+  camera.position.lerp(targetCam, 0.10);
+  const look = player.position.clone().addScaledVector(front, 7);
+  camera.lookAt(look);
+
+  renderer.render(scene, camera);
+}
+
+function loop(){
+  const dt = clock.getDelta();
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+
+// ---------- init ----------
+restartGame();
+loop();
+</script>
+</body>
+</html>
