@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kraken Hunter — Play as the Giant Kraken</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a1424; color: #fff; font-family: 'Segoe UI', system-ui, sans-serif; }
+  canvas { display: block; }
+  #ui {
+    position: absolute; top: 14px; left: 14px; pointer-events: none;
+    text-shadow: 0 2px 4px rgba(0,0,0,.7);
+  }
+  #ui .title { font-size: 20px; font-weight: 800; letter-spacing: 2px; color: #ffd166; margin-bottom: 6px; }
+  #healthbar { width: 210px; height: 22px; border: 3px solid #fff; background: #111; border-radius: 3px; }
+  #healthfill { height: 100%; width: 100%; background: #2ecc71; border-radius: 2px; transition: width .15s, background .15s; }
+  #hud { margin-top: 8px; font-size: 17px; color: #e8f4fd; }
+  .hint { margin-top: 6px; font-size: 13px; color: #9fb3c8; line-height: 1.5; max-width: 260px; }
+  #overlay {
+    position: absolute; inset: 0; background: rgba(6, 12, 22, .8);
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    pointer-events: auto; text-align: center;
+  }
+  #msg { font-size: 44px; font-weight: 900; letter-spacing: 4px; color: #ff6b6b; margin-bottom: 10px; text-shadow: 0 4px 12px rgba(0,0,0,.6); }
+  #final { font-size: 22px; color: #ffd166; margin-bottom: 22px; }
+  button {
+    padding: 14px 34px; font-size: 20px; font-weight: 800; color: #fff;
+    background: linear-gradient(180deg, #e74c3c, #c0392b); border: none; border-radius: 8px;
+    cursor: pointer; box-shadow: 0 4px 0 #8e2a22;
+  }
+  button:hover { filter: brightness(1.15); }
+  button:active { transform: translateY(2px); box-shadow: 0 2px 0 #8e2a2b; }
+  .controls { margin-top: 18px; font-size: 14px; color: #9fb3c8; line-height: 1.7; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="ui">
+  <div class="title">KRAKEN HUNTER</div>
+  <div id="healthbar"><div id="healthfill"></div></div>
+  <div id="hud">Score: 0 &nbsp;|&nbsp; Health: 100%</div>
+  <div class="hint">Move: WASD / Arrow Keys<br>Eat: swim into prey<br>Sharks bite back &bull; Islands block you<br>Whales &amp; ships = big meals</div>
+</div>
+
+<div id="overlay">
+  <div id="msg">KRAKEN FALLEN</div>
+  <div id="final">Score: 0</div>
+  <button onclick="resetGame()">Emerge Again</button>
+  <div class="controls">Move: WASD / Arrows &bull; Eat by colliding with prey &bull; Sharks damage you &bull; Islands are solid</div>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha: false });
+
+let W, H;
+let running = false;
+let lastTime = 0;
+let time = 0;
+let shakeX = 0, shakeY = 0;
+
+const input = { left: false, right: false, up: false, down: false };
+
+// ---------- sizing ----------
+function resize() {
+  W = canvas.width = innerWidth;
+  H = canvas.height = innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ---------- input ----------
+window.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (k === 'arrowleft' || k === 'a') input.left = true;
+  if (k === 'arrowright' || k === 'd') input.right = true;
+  if (k === 'arrowup' || k === 'w') input.up = true;
+  if (k === 'arrowdown' || k === 's') input.down = true;
+});
+window.addEventListener('keyup', e => {
+  const k = e.key.toLowerCase();
+  if (k === 'arrowleft' || k === 'a') input.left = false;
+  if (k === 'arrowright' || k === 'd') input.right = false;
+  if (k === 'arrowup' || k === 'w') input.up = false;
+  if (k === 'arrowdown' || k === 's') input.down = false;
+});
+
+// ---------- helpers ----------
+function rand(a, b) { return a + Math.random() * (b - a); }
+function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+// ---------- particle system ----------
+const particles = [];
+class Particle {
+  constructor(x, y, color, speed, life) {
+    this.x = x; this.y = y; this.color = color;
+    const ang = Math.random() * Math.PI * 2;
+    this.vx = Math.cos(ang) * rand(0.5, speed);
+    this.vy = Math.sin(ang) * rand(0.5, speed);
+    this.life = life; this.maxLife = life; this.size = rand(2, 5);
+  }
+  update(dt) {
+    this.x += this.vx; this.y += this.vy;
+    this.vx *= 0.94; this.vy *= 0.94;
+    this.life -= dt;
+  }
+  draw() {
+    const a = this.life / this.maxLife;
+    ctx.globalAlpha = a;
+    ctx.fillStyle = this.color;
+    ctx.beginPath(); ctx.arc(this.x, this.y, this.size * a, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+function spawnParticles(x, y, color, count) {
+  for (let i = 0; i < count; i++) particles.push(new Particle(x, y, color, rand(4, 12), rand(20, 50)));
+}
+
+// ---------- entities ----------
+const entities = [];
+const islands = [];
+const MAX_ENTITIES = 34;
+const spawnTimerMax = 90;
+let spawnTimer = 0;
+
+class Entity {
+  constructor(x, y, r, color, speed = 1.2, fleeRange = 0) {
+    this.x = x; this.y = y; this.r = r; this.color = color;
+    this.speed = speed; this.fleeRange = fleeRange;
+    this.vx = (Math.random() - 0.5) * 1.5;
+    this.vy = (Math.random() - 0.5) * 1.5;
+    this.angle = Math.atan2(this.vy, this.vx);
+    this.alive = true;
+    this.wander = rand(0, 1000);
+  }
+  update(player, dt) {
+    this.wander += dt * 0.6;
+    const dx = player.x - this.x;
+    const dy = player.y - this.y;
+    const d = Math.hypot(dx, dy);
+
+    if (this.fleeRange && d < this.fleeRange) {
+      // flee from player
+      const ax = -dx / d * 0.9;
+      const ay = -dy / d * 0.9;
+      this.vx += ax; this.vy += ay;
+    } else {
+      // gentle wander
+      this.vx += Math.sin(this.wander + this.x * 0.01) * 0.04;
+      this.vy += Math.cos(this.wander + this.y * 0.01) * 0.04;
+    }
+
+    const sp = Math.hypot(this.vx, this.vy);
+    if (sp > this.speed) { this.vx = (this.vx / sp) * this.speed; this.vy = (this.vy / sp) * this.speed; }
+    this.x += this.vx; this.y += this.vy;
+    this.angle = Math.atan2(this.vy, this.vx);
+
+    // bounce off world edges
+    if (this.x < this.r) { this.x = this.r; this.vx *= -1; }
+    if (this.x > W - this.r) { this.x = W - this.r; this.vx *= -1; }
+    if (this.y < this.r) { this.y = this.r; this.vy *= -1; }
+    if (this.y > H - this.r) { this.y = H - this.r; this.vy *= -1; }
+
+    // bounce off islands (simple)
+    for (const isl of islands) {
+      const d2 = Math.hypot(this.x - isl.x, this.y - isl.y);
+      if (d2 < isl.r + this.r && d2 > 0) {
+        const nx = (this.x - isl.x) / d2;
+        const ny = (this.y - isl.y) / d2;
+        this.x = isl.x + nx * (isl.r + this.r);
+        this.y = isl.y + ny * (isl.r + this.r);
+        this.vx -= nx * 0.6; this.vy -= ny * 0.6;
+      }
+    }
+  }
+  draw() {}
+}
+
+class Ship extends Entity {
+  constructor(x, y) {
+    super(x, y, 17, '#b2bec3', 0.9);
+    this.type = 'ship';
+    this.points = 100;
+    this.heal = 15;
+  }
+  update(player, dt) {
+    this.x += this.vx; this.y += this.vy;
+    if (this.x < 30 || this.x > W - 30) this.vx *= -1;
+    if (this.y < 30 || this.y > H - 30) this.vy *= -1;
+  }
+  draw() {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.angle);
+    // hull
+    ctx.fillStyle = '#7f8c8d'; ctx.strokeStyle = '#34495e'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(-17, 6); ctx.lineTo(17, 6); ctx.lineTo(10, -8); ctx.lineTo(-10, -8); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    // cabin
+    ctx.fillStyle = '#34495e'; ctx.beginPath(); ctx.arc(-4, -4, 7, 0, Math.PI * 2); ctx.fill();
+    // mast & sail
+    ctx.strokeStyle = '#5d6d7e'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(-2, 6); ctx.lineTo(-2, -16); ctx.stroke();
+    ctx.fillStyle = '#ecf0f1'; ctx.beginPath(); ctx.moveTo(-2, 6); ctx.lineTo(-14, -6); ctx.lineTo(-2, -14); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+}
+
+class Turtle extends Entity {
+  constructor(x, y) {
+    super(x, y, 13, '#7dcea0', 0.7, 220);
+    this.type = 'turtle'; this.points = 25; this.heal = 5;
+  }
+  draw() {
+    ctx.save(); ctx.translate(this.x, this.y); ctx.rotate(this.angle);
+    ctx.fillStyle = this.color;
+    ctx.beginPath(); ctx.ellipse(0, 0, 13, 9, 0, 0, Math.PI * 2); ctx.fill(); // shell
+    ctx.fillStyle = '#58b368'; ctx.beginPath(); ctx.arc(10, 0, 6, -0.6, 0.6); ctx.fill(); // head
+    ctx.fillStyle = '#2e7d5b';
+    ctx.beginPath(); ctx.arc(-7, -5, 4, 0, Math.PI * 2); ctx.fill(); // flipper
+    ctx.beginPath(); ctx.arc(-7, 5, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+}
+
+class Whale extends Entity {
+  constructor(x, y) {
+    super(x, y, 30, '#7f8c8d', 0.55, 320);
+    this.type = 'whale'; this.points = 160; this.heal = 30;
+  }
+  draw() {
+    ctx.save(); ctx.translate(this.x, this.y); ctx.rotate(this.angle);
+    ctx.fillStyle = this.color; ctx.strokeStyle = '#34495e'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(0, 0, 30, 14, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(26, 0, 7, 0, Math.PI); ctx.fill(); // tail
+    ctx.fillStyle = '#ecf0f1'; ctx.beginPath(); ctx.arc(22, 4, 4, 0, Math.PI * 2); ctx.fill(); // eye
+    ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(22.5, 4, 1.4, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+}
+
+class Shark extends Entity {
+  constructor(x, y) {
+    super(x, y, 16, '#bdc3c7', 1.6, 0);
+    this.type = 'shark'; this.points = 70; this.heal = 12;
+    this.huntRange = 420;
+  }
+  update(player, dt) {
+    const dx = player.x - this.x;
+    const dy = player.y - this.y;
+    const d = Math.hypot(dx, dy);
+
+    if (d < this.huntRange) {
+      this.vx += (dx / d) * 0.14;
+      this.vy += (dy / d) * 0.14;
+    } else {
+      this.wander += dt * 0.5;
+      this.vx += Math.sin(this.wander) * 0.03;
+      this.vy += Math.cos(this.wander) * 0.03;
+    }
+
+    const sp = Math.hypot(this.vx, this.vy);
+    if (sp > this.speed) { this.vx = (this.vx / sp) * this.speed; this.vy = (this.vy / sp) * this.speed; }
+    this.x += this.vx; this.y += this.vy;
+    this.angle = Math.atan2(this.vy, this.vx);
+
+    if (this.x < this.r) { this.x = this.r; this.vx *= -1; }
+    if (this.x > W - this.r) { this.x = W - this.r; this.vx *= -1; }
+    if (this.y < this.r) { this.y = this.r; this.vy *= -1; }
+    if (this.y > H - this.r) { this.y = H - this.r; this.vy *= -1; }
+  }
+  draw() {
+    ctx.save(); ctx.translate(this.x, this.y); ctx.rotate(this.angle);
+    ctx.fillStyle = this.color;
+    ctx.beginPath(); ctx.ellipse(0, 0, 16, 7, 0, 0, Math.PI * 2); ctx.fill(); // body
+    ctx.beginPath(); ctx.moveTo(-14, 4); ctx.lineTo(-20, -6); ctx.lineTo(-16, 0); ctx.closePath(); ctx.fill(); // tail
+    ctx.beginPath(); ctx.moveTo(-6, -6); ctx.lineTo(-2, -14); ctx.lineTo(2, -6); ctx.closePath(); ctx.fill(); // fin
+    ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(11, -2, 2.2, 0, Math.PI * 2); ctx.fill(); // eye
+    ctx.restore();
+  }
+}
+
+class Human extends Entity {
+  constructor(x, y) {
+    super(x, y, 7, '#f5b08a', 0.9, 180);
+    this.type = 'human'; this.points = 12; this.heal = 3;
+  }
+  draw() {
+    ctx.save(); ctx.translate(this.x, this.y);
+    ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(0, -2, 7, 0, Math.PI * 2); ctx.fill(); // body/head
+    ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, 4); ctx.lineTo(0, 9); ctx.stroke(); // legs hint
+    ctx.restore();
+  }
+}
+
+class Island {
+  constructor(x, y, r) {
+    this.x = x; this.y = y; this.r = r;
+    this.color = '#e6d5b8';
+    this.edge = '#c7b28b';
+    // irregular bump offsets
+    this.bumps = [];
+    const n = 8;
+    for (let i = 0; i < n; i++) this.bumps.push(rand(0.85, 1.15));
+  }
+  draw() {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.fillStyle = this.color; ctx.strokeStyle = this.edge; ctx.lineWidth = 3;
+    ctx.beginPath();
+    const n = this.bumps.length;
+    for (let i = 0; i <= n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const rr = this.r * this.bumps[i % n];
+      if (i === 0) ctx.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
+      else ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+    }
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    // sand patch
+    ctx.fillStyle = '#d4c4a3'; ctx.beginPath(); ctx.arc(-this.r * 0.35, -this.r * 0.25, this.r * 0.35, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+}
+
+// ---------- player (kraken) ----------
+const player = {
+  x: W / 2, y: H / 2,
+  vx: 0, vy: 0,
+  radius: 42,
+  maxHealth: 100, health: 100,
+  score: 0,
+  angle: 0,
+  hurtTimer: 0,
+  speed: 5,
+  tentacles: 8,
+  update(dt) {
+    let ax = 0, ay = 0;
+    if (input.left) ax = -1;
+    if (input.right) ax = 1;
+    if (input.up) ay = -1;
+    if (input.down) ay = 1;
+
+    const len = Math.hypot(ax, ay);
+    if (len > 0) { ax /= len; ay /= len; }
+
+    this.vx += ax * 0.7;
+    this.vy += ay * 0.7;
+    this.vx *= 0.86;
+    this.vy *= 0.86;
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    // clamp to screen
+    this.x = clamp(this.x, this.radius, W - this.radius);
+    this.y = clamp(this.y, this.radius, H - this.radius);
+
+    if (Math.abs(this.vx) > 0.15 || Math.abs(this.vy) > 0.15) {
+      this.angle = Math.atan2(this.vy, this.vx);
+    }
+
+    if (this.hurtTimer > 0) this.hurtTimer -= dt * 60;
+  },
+  draw() {
+    const t = time;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    // hurt flash
+    if (this.hurtTimer > 0) {
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = '#ff4444';
+      ctx.beginPath(); ctx.arc(0, 0, this.radius + 8, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // ---- tentacles (fan out behind / around) ----
+    const baseLen = 62;
+    for (let i = 0; i < this.tentacles; i++) {
+      const offset = (i - (this.tentacles - 1) / 2) * 0.62;
+      const baseAngle = this.angle + Math.PI + offset;
+      const len = baseLen + Math.sin(t * 0.006 + i) * 8 + Math.cos(t * 0.004 + i * 1.3) * 6;
+      const segs = 10;
+      ctx.save();
+      ctx.translate(0, 0);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      let cx = 0, cy = 0;
+      let dir = baseAngle;
+      for (let s = 1; s <= segs; s++) {
+        const tt = s / segs;
+        const wave = Math.sin(t * 0.005 + i * 1.7 + s * 1.1) * 0.9;
+        const segAngle = dir + wave + Math.sin(t * 0.003 + i) * 0.35;
+        const step = len / segs;
+        const nx = cx + Math.cos(segAngle) * step;
+        const ny = cy + Math.sin(segAngle) * step;
+        ctx.lineTo(nx, ny);
+        cx = nx; cy = ny;
+      }
+      ctx.lineWidth = Math.max(4, 10 * (1 - 0.0));
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = this.hurtTimer > 0 ? '#ff7676' : '#5d2a38';
+      ctx.stroke();
+      // suction cup tip
+      ctx.fillStyle = '#3d1e28';
+      ctx.beginPath(); ctx.arc(cx, cy, 4.5, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+
+    // ---- body ----
+    const hurt = this.hurtTimer > 0;
+    ctx.fillStyle = hurt ? '#7a1f2e' : '#4a1d2b';
+    ctx.strokeStyle = hurt ? '#ff6b6b' : '#2a0d16';
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+    // head ridge
+    ctx.strokeStyle = hurt ? '#ff9a9a' : '#3a1220';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0, 0, this.radius - 10, 0.4, 2.7); ctx.stroke();
+
+    // eye (looks toward movement)
+    const ex = Math.cos(this.angle) * 14;
+    const ey = Math.sin(this.angle) * 14;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(ex, ey, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.arc(ex + Math.cos(this.angle) * 2, ey + Math.sin(this.angle) * 2, 2.5, 0, Math.PI * 2); ctx.fill();
+
+    // mouth
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(0, 0, 20, 0.6, 2.55); ctx.stroke();
+
+    ctx.restore();
+  }
+};
+
+// ---------- game state ----------
+function resetGame() {
+  player.x = W / 2; player.y = H / 2;
+  player.vx = 0; player.vy = 0;
+  player.health = player.maxHealth;
+  player.score = 0;
+  player.hurtTimer = 0;
+  entities.length = 0;
+  particles.length = 0;
+  islands.length = 0;
+  spawnTimer = 0;
+  shakeX = 0; shakeY = 0;
+
+  // spawn islands
+  for (let i = 0; i < 5; i++) spawnIsland();
+  // spawn initial prey
+  for (let i = 0; i < 4; i++) spawnEntity('ship');
+  for (let i = 0; i < 6; i++) spawnEntity('turtle');
+  for (let i = 0; i < 3; i++) spawnEntity('whale');
+  for (let i = 0; i < 5; i++) spawnEntity('shark');
+  for (let i = 0; i < 8; i++) spawnEntity('human');
+
+  document.getElementById('overlay').style.display = 'none';
+  running = true;
+  lastTime = performance.now();
+  requestAnimationFrame(loop);
+}
+
+function spawnIsland() {
+  let tries = 0;
+  let x, y, r;
+  do {
+    r = rand(50, 110);
+    x = rand(r + 20, W - r - 20);
+    y = rand(r + 20, H - r - 20);
+    tries++;
+  } while (tries < 60 && (dist({ x, y }, player) < r + player.radius + 160 ||
+    islands.some(isl => dist({ x, y }, isl) < r + isl.r + 40)));
+  islands.push(new Island(x, y, r));
+}
+
+function spawnEntity(type) {
+  let tries = 0;
+  let x, y, ent;
+  do {
+    const r = type === 'ship' ? 17 : type === 'whale' ? 30 : type === 'shark' ? 16 : type === 'turtle' ? 13 : 7;
+    x = rand(r + 10, W - r - 10);
+    y = rand(r + 10, H - r - 10);
+    tries++;
+  } while (tries < 60 && dist({ x, y }, player) < 170);
+
+  switch (type) {
+    case 'ship': ent = new Ship(x, y); break;
+    case 'turtle': ent = new Turtle(x, y); break;
+    case 'whale': ent = new Whale(x, y); break;
+    case 'shark': ent = new Shark(x, y); break;
+    case 'human': ent = new Human(x, y); break;
+  }
+  entities.push(ent);
+}
+
+function spawnRandomPrey() {
+  const roll = Math.random();
+  if (roll < 0.22) spawnEntity('ship');
+  else if (roll < 0.42) spawnEntity('turtle');
+  else if (roll < 0.52) spawnEntity('whale');
+  else if (roll < 0.70) spawnEntity('shark');
+  else spawnEntity('human');
+}
+
+function eat(ent) {
+  player.score += ent.points;
+  player.health = Math.min(player.maxHealth, player.health + ent.heal);
+  spawnParticles(ent.x, ent.y, ent.color, 14);
+  ent.alive = false;
+  updateHUD();
+}
+
+function hurtPlayer(amount) {
+  player.health = Math.max(0, player.health - amount);
+  player.hurtTimer = 25;
+  shakeX = 10; shakeY = 10;
+  spawnParticles(player.x, player.y, '#ff6b6b', 20);
+  // knockback away from nearest shark
+  let nearest = null, best = 1e9;
+  for (const e of entities) {
+    if (e.type === 'shark' && e.alive) {
+      const d = dist(player, e);
+      if (d < best) { best = d; nearest = e; }
+    }
+  }
+  if (nearest) {
+    const dx = player.x - nearest.x;
+    const dy = player.y - nearest.y;
+    const d = Math.hypot(dx, dy) || 1;
+    player.x += (dx / d) * 35;
+    player.y += (dy / d) * 35;
+  }
+  updateHUD();
+  if (player.health <= 0) gameOver();
+}
+
+function updateHUD() {
+  const pct = Math.round((player.health / player.maxHealth) * 100);
+  document.getElementById('healthfill').style.width = pct + '%';
+  document.getElementById('healthfill').style.background = pct > 35 ? '#2ecc71' : pct > 15 ? '#f1c40f' : '#e74c3c';
+  document.getElementById('hud').textContent = `Score: ${player.score}  |  Health: ${pct}%`;
+}
+
+function gameOver() {
+  running = false;
+  document.getElementById('msg').textContent = 'KRAKEN FALLEN';
+  document.getElementById('final').textContent = `Final Score: ${player.score}`;
+  document.getElementById('overlay').style.display = 'flex';
+}
+
+// ---------- update / draw ----------
+function update(dt) {
+  time += dt * 60;
+  player.update(dt);
+
+  // island collision for player (solid)
+  for (const isl of islands) {
+    const d = dist(player, isl);
+    if (d < isl.r + player.radius && d > 0) {
+      const nx = (player.x - isl.x) / d;
+      const ny = (player.y - isl.y) / d;
+      player.x = isl.x + nx * (isl.r + player.radius);
+      player.y = isl.y + ny * (isl.r + player.radius);
+      player.vx *= 0.25; player.vy *= 0.25;
+    }
+  }
+
+  // entity update + interactions
+  for (let i = entities.length - 1; i >= 0; i--) {
+    const e = entities[i];
+    if (!e.alive) { entities.splice(i, 1); continue; }
+    e.update(player, dt);
+
+    const d = dist(player, e);
+    const reach = player.radius + e.r;
+
+    if (d < reach) {
+      if (e.type === 'shark') {
+        // sharks are a risky meal: they bite you on contact AND can be eaten
+        if (player.hurtTimer <= 0 && Math.random() < 0.15) hurtPlayer(14);
+        eat(e);
+      } else {
+        eat(e);
+      }
+    }
+  }
+
+  // spawn replacement prey over time
+  spawnTimer += dt * 60;
+  if (spawnTimer >= spawnTimerMax && entities.length < MAX_ENTITIES) {
+    spawnTimer = 0;
+    spawnRandomPrey();
+  }
+
+  // particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    particles[i].update(dt);
+    if (particles[i].life <= 0) particles.splice(i, 1);
+  }
+
+  // shake decay
+  shakeX *= 0.85; shakeY *= 0.85;
+  if (Math.abs(shakeX) < 0.2) shakeX = 0;
+  if (Math.abs(shakeY) < 0.2) shakeY = 0;
+}
+
+function drawWater() {
+  const t = Date.now() * 0.0015;
+  // deep ocean gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#0c1726');
+  grad.addColorStop(1, '#162b3f');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // wave lines
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 4; i++) {
+    ctx.strokeStyle = `rgba(${20 + i * 25}, ${60 + i * 20}, ${100 + i * 20}, ${0.35 - i * 0.08})`;
+    ctx.beginPath();
+    for (let x = 0; x <= W; x += 30) {
+      const y = H * 0.5 + Math.sin(x * 0.012 + t * 1.2 + i * 2) * (14 + i * 6) + i * 10;
+      if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+}
+
+function draw() {
+  ctx.save();
+  ctx.translate(shakeX, shakeY);
+
+  drawWater();
+
+  // islands
+  for (const isl of islands) isl.draw();
+
+  // entities
+  for (const e of entities) e.draw();
+
+  // player on top
+  player.draw();
+
+  // particles
+  for (const p of particles) p.draw();
+
+  ctx.restore();
+}
+
+function loop(now) {
+  if (!running) return;
+  const dt = (now - lastTime) / 1000;
+  lastTime = now;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// expose reset globally for the button
+window.resetGame = resetGame;
+
+// start
+resetGame();
+</script>
+</body>
+</html>
