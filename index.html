@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Shark Apex</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="icon" href="data:," />
+  </head>
+  <body>
+    <div id="game-shell">
+      <canvas id="gameCanvas" width="1280" height="720"></canvas>
+
+      <div id="hud">
+        <div class="stats">
+          <div class="stat-block">
+            <label>Score</label>
+            <span id="score">0</span>
+          </div>
+          <div class="stat-block">
+            <label>Health</label>
+            <span id="health">100</span>
+          </div>
+          <div class="stat-block">
+            <label>Size</label>
+            <span id="size">1.0x</span>
+          </div>
+          <div class="stat-block">
+            <label>Time</label>
+            <span id="timer">0:00</span>
+          </div>
+        </div>
+        <div id="mission">Hunt the reef. Survive the open ocean.</div>
+      </div>
+
+      <div id="touchControls" aria-label="Touch controls">
+        <button class="dir-btn" data-key="ArrowUp">▲</button>
+        <div class="middle-row">
+          <button class="dir-btn" data-key="ArrowLeft">◀</button>
+          <button class="dir-btn" data-key="ArrowDown">▼</button>
+          <button class="dir-btn" data-key="ArrowRight">▶</button>
+        </div>
+      </div>
+
+      <div id="overlay" class="show">
+        <div class="panel">
+          <h1>Shark Apex</h1>
+          <p>Swim through the blue, devour smaller prey, and avoid the giants of the deep.</p>
+          <ul>
+            <li>Move with WASD or arrow keys.</li>
+            <li>Use touch buttons on mobile.</li>
+            <li>Eat fish, turtles, rays, and smaller sharks.</li>
+            <li>Survive 90 seconds and grow to apex predator.</li>
+          </ul>
+          <button id="startButton">Start Hunt</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="game.js"></script>
+  </body>
+</html>
